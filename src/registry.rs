@@ -37,6 +37,15 @@ pub struct ContainerConfig {
     pub args: Vec<String>,
     #[serde(default)]
     pub bind_mounts: Vec<BindMount>,
+    #[serde(default)]
+    pub vpn_config: Option<VpnConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VpnConfig {
+    pub config_name: Option<String>,
+    pub config_path: Option<String>,
+    pub interface_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,13 +115,18 @@ impl ContainerRegistry {
 
     pub fn generate_id() -> String {
         use std::time::{SystemTime, UNIX_EPOCH};
+        
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs();
-
-        // Use last 6 chars of timestamp + random component for uniqueness
-        format!("{:x}", timestamp).chars().rev().take(6).collect()
+            .as_nanos();
+        
+        // Use process ID and timestamp for better uniqueness
+        let pid = std::process::id();
+        
+        // Create a more unique ID with timestamp, PID, and counter
+        let combined = timestamp.wrapping_mul(pid as u128);
+        format!("{:x}", combined).chars().take(8).collect()
     }
 
     pub fn add_container(
