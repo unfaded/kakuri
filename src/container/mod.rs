@@ -2,6 +2,7 @@ mod execution;
 mod filesystem;
 mod namespaces;
 pub mod user;
+mod vpn;
 
 use crate::{LegacyCli, registry::ContainerConfig};
 use anyhow::{Context, Result};
@@ -23,6 +24,7 @@ pub fn run_container(command: &str, args: &[String], cli: &LegacyCli) -> Result<
         .to_str()
         .context("Invalid executable path")?
         .to_string();
+
 
     // Use unshare command to set up user namespace with mapping
     let mut unshare_cmd = Command::new("unshare");
@@ -83,6 +85,16 @@ pub fn run_container(command: &str, args: &[String], cli: &LegacyCli) -> Result<
         unshare_cmd.arg(bind_mount);
     }
 
+    // Add VPN config
+    if let Some(vpn_config) = &cli.vpn_config {
+        unshare_cmd.arg("--vpn");
+        if let Some(config_path) = &vpn_config.config_path {
+            unshare_cmd.arg(config_path);
+        } else if let Some(config_name) = &vpn_config.config_name {
+            unshare_cmd.arg(config_name);
+        }
+    }
+
     let status = unshare_cmd
         .status()
         .context("Failed to run container setup")?;
@@ -138,7 +150,7 @@ pub fn start_persistent_container(
     command: &str,
     args: &[String],
     config: &ContainerConfig,
-) -> Result<()> {
+) -> Result<u32> {
     println!("Starting persistent container: {}", container_id);
 
     // Convert ContainerConfig to LegacyCli for compatibility
@@ -183,15 +195,16 @@ pub fn start_persistent_container(
     unshare_cmd.arg("--container-id");
     unshare_cmd.arg(container_id);
 
-    let status = unshare_cmd
-        .status()
+    let child = unshare_cmd
+        .spawn()
         .context("Failed to start persistent container")?;
 
-    if !status.success() {
-        anyhow::bail!("Persistent container failed with status: {}", status);
-    }
-
-    Ok(())
+    let pid = child.id();
+    
+    // Don't wait for the child - let it run independently
+    // The PID will be tracked in the registry for later cleanup
+    
+    Ok(pid)
 }
 
 pub fn exec_in_container(
