@@ -7,6 +7,7 @@ pub fn create_container(
     init: bool,
     allow_network: bool,
     bind: Vec<String>,
+    vpn_config: Option<crate::registry::VpnConfig>,
 ) -> Result<()> {
     let mut registry = ContainerRegistry::load()?;
 
@@ -93,6 +94,7 @@ pub fn create_container(
         command: None,
         args: vec![],
         bind_mounts,
+        vpn_config,
     };
 
     // Add container to registry
@@ -159,7 +161,139 @@ pub fn list_containers() -> Result<()> {
     Ok(())
 }
 
-pub fn start_container(name: String, command: Vec<String>) -> Result<()> {
+pub fn set_container_vpn(name: String, config: String) -> Result<()> {
+    let mut registry = ContainerRegistry::load()?;
+
+    // Find container by name
+    let containers = registry.find_by_name(&name);
+    let container_id = match containers.len() {
+        0 => anyhow::bail!("No container found with name {}", name),
+        1 => containers[0].full_id(),
+        _ => {
+            println!("Multiple containers found with name {}:", name);
+            for container in containers {
+                println!(
+                    "  {} ({})",
+                    container.full_id(),
+                    match container.status {
+                        ContainerStatus::Created => "created",
+                        ContainerStatus::Running => "running",
+                        ContainerStatus::Stopped => "stopped",
+                        ContainerStatus::Temporary => "temporary",
+                    }
+                );
+            }
+            anyhow::bail!("Please specify the full container ID instead of name");
+        }
+    };
+
+    // Get container info
+    let container = registry
+        .get_container_mut(&container_id)
+        .ok_or_else(|| anyhow::anyhow!("Container not found: {}", container_id))?;
+
+    // Parse and set VPN config
+    let vpn_config = crate::parse_vpn_config(Some(config))?;
+    container.config.vpn_config = vpn_config;
+
+    // Save registry
+    registry.save()?;
+
+    println!("VPN configuration updated for container: {}", container_id);
+    Ok(())
+}
+
+pub fn remove_container_vpn(name: String) -> Result<()> {
+    let mut registry = ContainerRegistry::load()?;
+
+    // Find container by name
+    let containers = registry.find_by_name(&name);
+    let container_id = match containers.len() {
+        0 => anyhow::bail!("No container found with name {}", name),
+        1 => containers[0].full_id(),
+        _ => {
+            println!("Multiple containers found with name {}:", name);
+            for container in containers {
+                println!(
+                    "  {} ({})",
+                    container.full_id(),
+                    match container.status {
+                        ContainerStatus::Created => "created",
+                        ContainerStatus::Running => "running",
+                        ContainerStatus::Stopped => "stopped",
+                        ContainerStatus::Temporary => "temporary",
+                    }
+                );
+            }
+            anyhow::bail!("Please specify the full container ID instead of name");
+        }
+    };
+
+    // Get container info
+    let container = registry
+        .get_container_mut(&container_id)
+        .ok_or_else(|| anyhow::anyhow!("Container not found: {}", container_id))?;
+
+    // Remove VPN config
+    container.config.vpn_config = None;
+
+    // Save registry
+    registry.save()?;
+
+    println!("VPN configuration removed from container: {}", container_id);
+    Ok(())
+}
+
+pub fn show_container_vpn(name: String) -> Result<()> {
+    let registry = ContainerRegistry::load()?;
+
+    // Find container by name
+    let containers = registry.find_by_name(&name);
+    let container_id = match containers.len() {
+        0 => anyhow::bail!("No container found with name {}", name),
+        1 => containers[0].full_id(),
+        _ => {
+            println!("Multiple containers found with name {}:", name);
+            for container in containers {
+                println!(
+                    "  {} ({})",
+                    container.full_id(),
+                    match container.status {
+                        ContainerStatus::Created => "created",
+                        ContainerStatus::Running => "running",
+                        ContainerStatus::Stopped => "stopped",
+                        ContainerStatus::Temporary => "temporary",
+                    }
+                );
+            }
+            anyhow::bail!("Please specify the full container ID instead of name");
+        }
+    };
+
+    // Get container info
+    let container = registry
+        .get_container(&container_id)
+        .ok_or_else(|| anyhow::anyhow!("Container not found: {}", container_id))?;
+
+    // Show VPN config
+    match &container.config.vpn_config {
+        None => println!("Container {} has no VPN configuration", container_id),
+        Some(vpn) => {
+            println!("VPN configuration for container {}:", container_id);
+            println!("  Interface: {}", vpn.interface_name);
+            if let Some(name) = &vpn.config_name {
+                println!("  Config name: {}", name);
+            }
+            if let Some(path) = &vpn.config_path {
+                println!("  Config path: {}", path);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub fn start_container(name: String, command: Vec<String>, vpn_override: Option<String>) -> Result<()> {
     let mut registry = ContainerRegistry::load()?;
 
     // Find container by name
@@ -208,7 +342,12 @@ pub fn start_container(name: String, command: Vec<String>) -> Result<()> {
     };
 
     // Clone the config before modifying the container
-    let config = container.config.clone();
+    let mut config = container.config.clone();
+    
+    // Apply VPN override if provided
+    if let Some(vpn_config_str) = vpn_override {
+        config.vpn_config = crate::parse_vpn_config(Some(vpn_config_str))?;
+    }
 
     // Update container status and command
     container.status = ContainerStatus::Running;
@@ -232,7 +371,16 @@ pub fn start_container(name: String, command: Vec<String>) -> Result<()> {
     // Start the container using the existing container system
     // We need to modify the container module to support persistent containers
     use crate::container::start_persistent_container;
-    start_persistent_container(&container_id, &actual_command, &args, &config)
+    let child_pid = start_persistent_container(&container_id, &actual_command, &args, &config)?;
+    
+    // Update container with PID for tracking
+    let container = registry
+        .get_container_mut(&container_id)
+        .ok_or_else(|| anyhow::anyhow!("Container disappeared after start"))?;
+    container.pid = Some(child_pid);
+    registry.save()?;
+    
+    Ok(())
 }
 
 pub fn stop_container(name: String) -> Result<()> {
@@ -271,7 +419,24 @@ pub fn stop_container(name: String) -> Result<()> {
         anyhow::bail!("Container {} is not running", container_id);
     }
 
-    // TODO: Actually stop the running process (need PID tracking)
+    // Stop the running process if we have a PID
+    if let Some(pid) = container.pid {
+        println!("Terminating container process: {}", pid);
+        
+        // Try graceful termination first (SIGTERM)
+        if let Err(e) = terminate_process(pid, false) {
+            println!("Warning: Failed to send SIGTERM to process {}: {}", pid, e);
+            
+            // Wait a bit then try force kill (SIGKILL)
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            if let Err(e) = terminate_process(pid, true) {
+                println!("Warning: Failed to send SIGKILL to process {}: {}", pid, e);
+            }
+        }
+    } else {
+        println!("Warning: No PID tracked for container {}", container_id);
+    }
+
     println!("Stopping container: {}", container_id);
 
     // Update status
@@ -322,6 +487,14 @@ pub fn remove_container(name: String, force: bool) -> Result<()> {
             "Container {} is running. Stop it first or use --force",
             container_id
         );
+    }
+
+    // If forcing removal of running container, kill the process
+    if matches!(container.status, ContainerStatus::Running) && force {
+        if let Some(pid) = container.pid {
+            println!("Force killing container process: {}", pid);
+            let _ = terminate_process(pid, true); // Force kill, ignore errors
+        }
     }
 
     // Remove container directory
@@ -435,4 +608,18 @@ fn format_timestamp(timestamp: u64) -> String {
     } else {
         format!("{}d ago", diff / 86400)
     }
+}
+
+fn terminate_process(pid: u32, force: bool) -> Result<()> {
+    use nix::sys::signal::{self, Signal};
+    use nix::unistd::Pid;
+
+    let signal = if force { Signal::SIGKILL } else { Signal::SIGTERM };
+    let nix_pid = Pid::from_raw(pid as i32);
+    
+    signal::kill(nix_pid, signal)
+        .with_context(|| format!("Failed to send {:?} to process {}", signal, pid))?;
+    
+    println!("Sent {:?} to process {}", signal, pid);
+    Ok(())
 }
