@@ -14,10 +14,23 @@ pub fn create_namespaces(cli: &LegacyCli) -> Result<()> {
     // IPC namespace
     unshare(CloneFlags::CLONE_NEWIPC).context("Failed to create IPC namespace")?;
 
-    // Network namespace (optional)
-    if !cli.allow_network {
-        unshare(CloneFlags::CLONE_NEWNET).context("Failed to create network namespace")?;
-        println!("Network isolated");
+    // Network namespace handling
+    match (&cli.allow_network, &cli.vpn_config) {
+        (true, None) => {
+            // Host network access - don't create network namespace
+            println!("Using host network");
+        },
+        (_, Some(vpn_config)) => {
+            unshare(CloneFlags::CLONE_NEWNET).context("Failed to create network namespace")?;
+            println!("Setting up VPN network isolation");
+
+            crate::container::vpn::setup_vpn_network(vpn_config)?;
+        }
+        (false, None) => {
+            // No network - create isolated network namespace
+            unshare(CloneFlags::CLONE_NEWNET).context("Failed to create network namespace")?;
+            println!("Network isolated (no connectivity)");
+        }
     }
 
     // PID namespace (for process isolation) - temporarily disabled due to bash fork issues
@@ -28,3 +41,4 @@ pub fn create_namespaces(cli: &LegacyCli) -> Result<()> {
     println!("All namespaces created");
     Ok(())
 }
+
