@@ -56,7 +56,7 @@ pub fn create_user(container_root: &str, username: &str, uid: u32, gid: u32) -> 
     let bashrc_path = format!("{}/home/{}/.bashrc", container_root, username);
     let bashrc_content = format!(
         r#"# Basic bashrc for container user
-export PS1="{}@container:\w\$ "
+export PS1="\[\033[1;34m\][container]\[\033[0m\] \[\033[1;32m\]\w\[\033[0m\] $ "
 export PATH=/home/{}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
 export HOME=/home/{}
 export USER={}
@@ -67,12 +67,19 @@ function whoami() {{
     echo "{}"
 }}
 
+# Welcome message and aliases
+if [ -z "$CONTAINER_WELCOMED" ]; then
+    echo "Welcome to Kakuri container bash"
+    echo ""
+    export CONTAINER_WELCOMED=1
+fi
+
 # Aliases for better user experience
 alias ll="ls -la"
 alias la="ls -A"
 alias l="ls -CF"
 "#,
-        username, username, username, username, username, username
+        username, username, username, username, username
     );
     fs::write(&bashrc_path, bashrc_content).context("Failed to create .bashrc")?;
 
