@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 
 mod config;
@@ -29,6 +29,7 @@ fn handle_container_init() -> Result<()> {
     let mut container_id = None;
     let mut bind = Vec::new();
     let mut user = false;
+    let mut vpn = None;
     let mut i = init_pos + 2;
 
     // Parse remaining args, filtering out flags
@@ -58,6 +59,14 @@ fn handle_container_init() -> Result<()> {
                 user = true;
                 i += 1;
             }
+            "--vpn" => {
+                if i + 1 < raw_args.len() {
+                    vpn = Some(raw_args[i + 1].clone());
+                    i += 2;
+                } else {
+                    anyhow::bail!("--vpn requires a value");
+                }
+            }
             _ => {
                 command_args.push(raw_args[i].clone());
                 i += 1;
@@ -65,12 +74,14 @@ fn handle_container_init() -> Result<()> {
         }
     }
 
+    let vpn_config = parse_vpn_config(vpn)?;
     let legacy_cli = LegacyCli {
         command: command.clone(),
         args: command_args.clone(),
         allow_network,
         bind,
         user,
+        vpn_config,
     };
 
     init_container(command, &command_args, &legacy_cli, container_id.as_deref())
@@ -104,6 +115,7 @@ fn handle_direct_execution(raw_args: &[String]) -> Result<()> {
     let mut allow_network = false;
     let mut bind = Vec::new();
     let mut user = false;
+    let mut vpn = None;
     let mut i = 1;
 
     // Parse container options first
@@ -124,6 +136,14 @@ fn handle_direct_execution(raw_args: &[String]) -> Result<()> {
             "--user" => {
                 user = true;
                 i += 1;
+            }
+            "--vpn" => {
+                if i + 1 < raw_args.len() {
+                    vpn = Some(raw_args[i + 1].clone());
+                    i += 2;
+                } else {
+                    anyhow::bail!("--vpn requires a value");
+                }
             }
             "--" => {
                 i += 1;
@@ -147,12 +167,14 @@ fn handle_direct_execution(raw_args: &[String]) -> Result<()> {
     }
 
     let actual_command = command.unwrap_or_else(|| "/bin/bash".to_string());
+    let vpn_config = parse_vpn_config(vpn)?;
     let legacy_cli = LegacyCli {
         command: actual_command.clone(),
         args: command_args.clone(),
         allow_network,
         bind,
         user,
+        vpn_config,
     };
 
     run_container(&actual_command, &command_args, &legacy_cli)
@@ -187,6 +209,10 @@ struct Cli {
     #[arg(long, value_name = "PROFILE")]
     bind_profile: Option<String>,
 
+    /// Use VPN configuration for network isolation
+    #[arg(long, value_name = "CONFIG")]
+    vpn: Option<String>,
+
     /// Run as non-root user in container (username: user, password: root)
     #[arg(long)]
     user: bool,
@@ -213,6 +239,9 @@ enum Commands {
         #[arg(long, value_name = "PROFILE")]
         bind_profile: Option<String>,
 
+        #[arg(long, value_name = "CONFIG")]
+        vpn: Option<String>,
+
         #[arg(long)]
         user: bool,
     },
@@ -232,6 +261,9 @@ enum Commands {
 
         #[arg(long, value_name = "PROFILE")]
         bind_profile: Option<String>,
+
+        #[arg(long, value_name = "CONFIG")]
+        vpn: Option<String>,
     },
 
     /// Start a container
@@ -240,6 +272,9 @@ enum Commands {
 
         #[arg(trailing_var_arg = true)]
         command: Vec<String>,
+
+        #[arg(long, value_name = "CONFIG")]
+        vpn: Option<String>,
     },
 
     /// Execute a command in a running container
@@ -269,6 +304,29 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
+
+    /// Manage VPN configuration for containers
+    Vpn {
+        #[command(subcommand)]
+        action: VpnAction,
+    },
+}
+
+#[derive(clap::Subcommand, Debug, Clone)]
+enum VpnAction {
+    /// Set VPN configuration for a container
+    Set {
+        container: String,
+        config: String,
+    },
+    /// Remove VPN configuration from a container
+    Remove {
+        container: String,
+    },
+    /// Show VPN configuration of a container
+    Show {
+        container: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -291,12 +349,14 @@ fn main() -> Result<()> {
         None => {
             let actual_command = cli.command.unwrap_or_else(|| "/bin/bash".to_string());
             let final_binds = merge_bind_mounts(cli.bind.clone(), cli.bind_profile.clone())?;
+            let vpn_config = parse_vpn_config(cli.vpn.clone())?;
             let legacy_cli = LegacyCli {
                 command: actual_command.clone(),
                 args: cli.args.clone(),
                 allow_network: cli.allow_network,
                 bind: final_binds,
                 user: cli.user,
+                vpn_config,
             };
             run_container(&actual_command, &cli.args, &legacy_cli)
         }
@@ -306,16 +366,19 @@ fn main() -> Result<()> {
             allow_network,
             bind,
             bind_profile,
+            vpn,
             user,
         }) => {
             let actual_command = command.unwrap_or_else(|| "/bin/bash".to_string());
             let final_binds = merge_bind_mounts(bind, bind_profile)?;
+            let vpn_config = parse_vpn_config(vpn)?;
             let legacy_cli = LegacyCli {
                 command: actual_command.clone(),
                 args: args.clone(),
                 allow_network,
                 bind: final_binds,
                 user,
+                vpn_config,
             };
             run_container(&actual_command, &args, &legacy_cli)
         }
@@ -325,12 +388,14 @@ fn main() -> Result<()> {
             allow_network,
             bind,
             bind_profile,
+            vpn,
         }) => {
             let final_binds = merge_bind_mounts(bind, bind_profile)?;
-            container_manager::create_container(name, init, allow_network, final_binds)
+            let vpn_config = parse_vpn_config(vpn)?;
+            container_manager::create_container(name, init, allow_network, final_binds, vpn_config)
         }
-        Some(Commands::Start { name, command }) => {
-            container_manager::start_container(name, command)
+        Some(Commands::Start { name, command, vpn }) => {
+            container_manager::start_container(name, command, vpn)
         }
         Some(Commands::Exec {
             name,
@@ -341,6 +406,13 @@ fn main() -> Result<()> {
         Some(Commands::List) => container_manager::list_containers(),
         Some(Commands::Stop { name }) => container_manager::stop_container(name),
         Some(Commands::Remove { name, force }) => container_manager::remove_container(name, force),
+        Some(Commands::Vpn { action }) => match action {
+            VpnAction::Set { container, config } => {
+                container_manager::set_container_vpn(container, config)
+            }
+            VpnAction::Remove { container } => container_manager::remove_container_vpn(container),
+            VpnAction::Show { container } => container_manager::show_container_vpn(container),
+        },
     }
 }
 
@@ -353,6 +425,7 @@ struct LegacyCli {
     allow_network: bool,
     bind: Vec<String>,
     user: bool,
+    vpn_config: Option<crate::registry::VpnConfig>,
 }
 
 fn merge_bind_mounts(bind: Vec<String>, bind_profile: Option<String>) -> Result<Vec<String>> {
@@ -372,4 +445,40 @@ fn merge_bind_mounts(bind: Vec<String>, bind_profile: Option<String>) -> Result<
     }
 
     Ok(final_binds)
+}
+
+pub fn parse_vpn_config(vpn: Option<String>) -> Result<Option<crate::registry::VpnConfig>> {
+    match vpn {
+        None => Ok(None),
+        Some(config_str) => {
+            // Check if it's a path to a config file
+            if config_str.starts_with("/") || config_str.starts_with("./") || config_str.starts_with("~/") {
+                // Expand ~ to home directory
+                let expanded_path = if config_str.starts_with("~/") {
+                    let home = std::env::var("HOME").context("HOME environment variable not set")?;
+                    config_str.replacen("~", &home, 1)
+                } else {
+                    config_str
+                };
+                
+                // Verify file exists
+                if !std::path::Path::new(&expanded_path).exists() {
+                    anyhow::bail!("VPN config file not found: {}", expanded_path);
+                }
+                
+                Ok(Some(crate::registry::VpnConfig {
+                    config_name: None,
+                    config_path: Some(expanded_path),
+                    interface_name: "wg0".to_string(),
+                }))
+            } else {
+                // Named configuration
+                Ok(Some(crate::registry::VpnConfig {
+                    config_name: Some(config_str),
+                    config_path: None,
+                    interface_name: "wg0".to_string(),
+                }))
+            }
+        }
+    }
 }
