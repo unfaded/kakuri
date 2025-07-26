@@ -140,32 +140,6 @@ Kakuri uses Linux user namespaces to provide unprivileged containerization:
 - Network isolation via network namespaces
 - Process isolation via PID namespaces
 
-## Examples
-
-### Development Environment
-
-```bash
-# Create development container with common tools
-kakuri create --bind-profile dev --allow-network devenv
-
-# Start with your project mounted
-kakuri start devenv --bind ~/myproject:/workspace bash
-```
-
-### Secure Testing
-
-```bash
-# Isolated environment for untrusted code
-kakuri --bind ~/downloads:/data python3 suspicious_script.py
-```
-
-### Network Services
-
-```bash
-# Run service with network but filesystem isolation
-kakuri --allow-network --bind ./config:/etc/service service-binary
-```
-
 ## Container Lifecycle
 
 1. Create namespace (user, mount, PID, network, UTS, IPC)
