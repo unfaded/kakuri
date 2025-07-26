@@ -56,7 +56,7 @@ pub fn create_user(container_root: &str, username: &str, uid: u32, gid: u32) -> 
     let bashrc_path = format!("{}/home/{}/.bashrc", container_root, username);
     let bashrc_content = format!(
         r#"# Basic bashrc for container user
-export PS1='{}@container:\w\$ '
+export PS1="{}@container:\w\$ "
 export PATH=/home/{}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
 export HOME=/home/{}
 export USER={}
@@ -68,9 +68,9 @@ function whoami() {{
 }}
 
 # Aliases for better user experience
-alias ll='ls -la'
-alias la='ls -A'
-alias l='ls -CF'
+alias ll="ls -la"
+alias la="ls -A"
+alias l="ls -CF"
 "#,
         username, username, username, username, username, username
     );
@@ -126,7 +126,7 @@ pub fn switch_user(username: &str, uid: u32, gid: u32) -> Result<()> {
     setuid(Uid::from_raw(uid)).with_context(|| format!("Failed to set UID to {}", uid))?;
 
     // Set environment variables
-    // SAFETY: We're setting these environment variables in a controlled container environment
+    // SAFETY: We are setting these environment variables in a controlled container environment
     // before exec, which is safe in this context
     unsafe {
         std::env::set_var("USER", username);

@@ -52,7 +52,7 @@ impl BindMount {
     }
 
     pub fn from_string(bind_str: &str) -> Result<Self> {
-        if let Some((host, container)) = bind_str.split_once(':') {
+        if let Some((host, container)) = bind_str.split_once(":") {
             // Format: host_path:container_path
             Ok(BindMount {
                 host_path: host.to_string(),

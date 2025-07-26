@@ -13,7 +13,7 @@ pub fn create_container(
     // Check for existing containers with the same name
     let existing = registry.find_by_name(&name);
     if !existing.is_empty() {
-        println!("Existing containers with name '{}':", name);
+        println!("Existing containers with name {}:", name);
         for container in existing {
             println!(
                 "  {} ({})",
@@ -27,7 +27,7 @@ pub fn create_container(
             );
         }
         anyhow::bail!(
-            "Container name '{}' already exists. Use a different name or remove existing containers.",
+            "Container name {} already exists. Use a different name or remove existing containers.",
             name
         );
     }
@@ -46,7 +46,7 @@ pub fn create_container(
             bind_mount.host_path.clone()
         };
 
-        // Create host directory if it doesn't exist and create_if_missing is true
+        // Create host directory if it does not exist and create_if_missing is true
         if bind_mount.create_if_missing {
             if let Some(parent) = std::path::Path::new(&expanded_host_path).parent() {
                 fs::create_dir_all(parent).with_context(|| {
@@ -57,7 +57,7 @@ pub fn create_container(
                 })?;
             }
             if !std::path::Path::new(&expanded_host_path).exists() {
-                if expanded_host_path.ends_with('/')
+                if expanded_host_path.ends_with("/")
                     || std::path::Path::new(&expanded_host_path)
                         .extension()
                         .is_none()
@@ -165,10 +165,10 @@ pub fn start_container(name: String, command: Vec<String>) -> Result<()> {
     // Find container by name
     let containers = registry.find_by_name(&name);
     let container_id = match containers.len() {
-        0 => anyhow::bail!("No container found with name '{}'", name),
+        0 => anyhow::bail!("No container found with name {}", name),
         1 => containers[0].full_id(),
         _ => {
-            println!("Multiple containers found with name '{}':", name);
+            println!("Multiple containers found with name {}:", name);
             for container in containers {
                 println!(
                     "  {} ({})",
@@ -241,10 +241,10 @@ pub fn stop_container(name: String) -> Result<()> {
     // Find container by name
     let containers = registry.find_by_name(&name);
     let container_id = match containers.len() {
-        0 => anyhow::bail!("No container found with name '{}'", name),
+        0 => anyhow::bail!("No container found with name {}", name),
         1 => containers[0].full_id(),
         _ => {
-            println!("Multiple containers found with name '{}':", name);
+            println!("Multiple containers found with name {}:", name);
             for container in containers {
                 println!(
                     "  {} ({})",
@@ -291,10 +291,10 @@ pub fn remove_container(name: String, force: bool) -> Result<()> {
     // Find container by name
     let containers = registry.find_by_name(&name);
     let container_id = match containers.len() {
-        0 => anyhow::bail!("No container found with name '{}'", name),
+        0 => anyhow::bail!("No container found with name {}", name),
         1 => containers[0].full_id(),
         _ => {
-            println!("Multiple containers found with name '{}':", name);
+            println!("Multiple containers found with name {}:", name);
             for container in containers {
                 println!(
                     "  {} ({})",
@@ -345,10 +345,10 @@ pub fn exec_container(name: String, command: String, args: Vec<String>) -> Resul
     // Find container by name
     let containers = registry.find_by_name(&name);
     let container_id = match containers.len() {
-        0 => anyhow::bail!("No container found with name '{}'", name),
+        0 => anyhow::bail!("No container found with name {}", name),
         1 => containers[0].full_id(),
         _ => {
-            println!("Multiple containers found with name '{}':", name);
+            println!("Multiple containers found with name {}:", name);
             for container in containers {
                 println!(
                     "  {} ({})",
@@ -370,11 +370,11 @@ pub fn exec_container(name: String, command: String, args: Vec<String>) -> Resul
         .get_container(&container_id)
         .ok_or_else(|| anyhow::anyhow!("Container not found: {}", container_id))?;
 
-    // For now, since we don't have persistent running containers (they exit after start),
-    // let's create a new interactive session in the container's context
+    // For now, since we do not have persistent running containers (they exit after start),
+    // let us create a new interactive session in the container context
     println!("Entering container: {}", container_id);
 
-    // Start a new session with the container's filesystem and settings
+    // Start a new session with the container filesystem and settings
     use crate::container::exec_in_container;
     exec_in_container(&container_id, &command, &args, &container.config)
 }
@@ -385,10 +385,10 @@ pub fn shell_container(name: String) -> Result<()> {
     // Find container by name
     let containers = registry.find_by_name(&name);
     let container_id = match containers.len() {
-        0 => anyhow::bail!("No container found with name '{}'", name),
+        0 => anyhow::bail!("No container found with name {}", name),
         1 => containers[0].full_id(),
         _ => {
-            println!("Multiple containers found with name '{}':", name);
+            println!("Multiple containers found with name {}:", name);
             for container in containers {
                 println!(
                     "  {} ({})",

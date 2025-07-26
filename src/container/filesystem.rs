@@ -351,14 +351,14 @@ fn parse_ldd_line(line: &str) -> Option<String> {
         let parts: Vec<&str> = line.split(" => ").collect();
         if parts.len() >= 2 {
             let path_part = parts[1].trim();
-            if let Some(space_pos) = path_part.find(' ') {
+            if let Some(space_pos) = path_part.find(" ") {
                 return Some(path_part[..space_pos].to_string());
             }
         }
     } else if line.starts_with("\t/") {
         // Format: "\t/lib64/ld-linux-x86-64.so.2 (0x...)"
         let trimmed = line.trim();
-        if let Some(space_pos) = trimmed.find(' ') {
+        if let Some(space_pos) = trimmed.find(" ") {
             return Some(trimmed[..space_pos].to_string());
         }
     }
@@ -577,7 +577,7 @@ fn apply_bind_mount(container_root: &str, bind_mount: &BindMount) -> Result<()> 
             })?;
         }
 
-        if bind_mount.host_path.ends_with('/') || host_path.extension().is_none() {
+        if bind_mount.host_path.ends_with("/") || host_path.extension().is_none() {
             // Treat as directory
             fs::create_dir_all(&bind_mount.host_path)
                 .with_context(|| format!("Failed to create directory {}", bind_mount.host_path))?;

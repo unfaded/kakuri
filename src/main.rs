@@ -87,7 +87,7 @@ fn should_use_direct_execution(raw_args: &[String]) -> bool {
     let first_non_flag_arg = raw_args
         .iter()
         .skip(1)
-        .find(|arg| !arg.starts_with('-'))
+        .find(|arg| !arg.starts_with("-"))
         .map(|s| s.as_str());
 
     // If the first non-flag argument is not a known subcommand, treat as direct execution
@@ -134,7 +134,7 @@ fn handle_direct_execution(raw_args: &[String]) -> Result<()> {
                 command_args.extend_from_slice(&raw_args[i..]);
                 break;
             }
-            arg if arg.starts_with('-') => {
+            arg if arg.starts_with("-") => {
                 i += 1;
             }
             _ => {
