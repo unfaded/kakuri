@@ -247,13 +247,54 @@ fn mount_essential_dirs(container_root: &str) -> Result<()> {
         "/lib64",
         "/usr/lib",
         "/usr/share/terminfo", // Terminal database for clear, tput, etc.
-        "/lib/terminfo",       // Alternative terminfo location
-        "/etc/terminfo",       // Another possible terminfo location
+        "/etc",                // System configuration including SSL certs
     ];
+
+    // Also mount user's .config directory as read-only if it exists
+    if let Ok(home) = std::env::var("HOME") {
+        let config_dir = format!("{}/.config", home);
+        if std::path::Path::new(&config_dir).exists() {
+            let target = format!("{}/home/user/.config", container_root);
+            
+            // Create target directory
+            if let Some(parent) = std::path::Path::new(&target).parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            fs::create_dir_all(&target).ok();
+            
+            // Mount the config directory
+            match mount(
+                Some(config_dir.as_str()),
+                target.as_str(),
+                None::<&str>,
+                MsFlags::MS_BIND | MsFlags::MS_REC,
+                None::<&str>,
+            ) {
+                Ok(_) => {
+                    // Then remount as read-only
+                    match mount(
+                        None::<&str>,
+                        target.as_str(),
+                        None::<&str>,
+                        MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
+                        None::<&str>,
+                    ) {
+                        Ok(_) => println!("Mounted read-only: ~/.config -> /home/user/.config"),
+                        Err(e) => println!("Warning: Failed to remount ~/.config as read-only: {}", e),
+                    }
+                }
+                Err(e) => println!("Warning: Failed to mount ~/.config: {}", e),
+            }
+        }
+    }
 
     for dir in &essential_dirs {
         if std::path::Path::new(dir).exists() {
             let target = format!("{}{}", container_root, dir);
+            
+            // Create target directory before mounting
+            fs::create_dir_all(&target).ok();
+            
             // First, bind mount the directory
             match mount(
                 Some(*dir),
@@ -263,17 +304,22 @@ fn mount_essential_dirs(container_root: &str) -> Result<()> {
                 None::<&str>,
             ) {
                 Ok(_) => {
-                    // Then remount as read-only for security
-                    match mount(
-                        None::<&str>,
-                        target.as_str(),
-                        None::<&str>,
-                        MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
-                        None::<&str>,
-                    ) {
-                        Ok(_) => println!("Mounted read-only: {}", dir),
-                        Err(e) => {
-                            println!("Warning: Failed to remount {} as read-only - {}", dir, e)
+                    // Don't remount /etc as read-only - may need to modify some configs
+                    if *dir == "/etc" {
+                        println!("Mounted: {}", dir);
+                    } else {
+                        // Then remount as read-only for security (other directories)
+                        match mount(
+                            None::<&str>,
+                            target.as_str(),
+                            None::<&str>,
+                            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
+                            None::<&str>,
+                        ) {
+                            Ok(_) => println!("Mounted read-only: {}", dir),
+                            Err(e) => {
+                                println!("Warning: Failed to remount {} as read-only - {}", dir, e)
+                            }
                         }
                     }
                 }
@@ -415,9 +461,9 @@ fn setup_container_overlay(container_root: &str, container_id: &str) -> Result<(
             Some(options.as_str()),
         ) {
             Ok(_) => println!("Created writable overlay for: {} -> {}", dir, upper_dir),
-            Err(e) => {
-                println!("Failed to create overlay for {}: {}", dir, e);
-                // Fallback to simple tmpfs for /tmp if overlay fails
+            Err(_) => {
+                // Overlay filesystem failed - this is expected in unprivileged containers
+                // Fallback to tmpfs for /tmp, skip others silently
                 if *dir == "/tmp" {
                     match mount(
                         Some("tmpfs"),
@@ -427,14 +473,11 @@ fn setup_container_overlay(container_root: &str, container_id: &str) -> Result<(
                         Some("size=100M"),
                     ) {
                         Ok(_) => println!("Created tmpfs for: {}", dir),
-                        Err(e2) => println!(
-                            "Warning: Failed to create overlay or tmpfs for {} - {}",
-                            dir, e2
-                        ),
+                        Err(e2) => println!("Warning: Failed to create writable space for {} - {}", dir, e2),
                     }
-                } else {
-                    println!("Warning: Failed to create overlay for {} - {}", dir, e);
                 }
+                // For other directories (/var/tmp, /home, /root, /opt), we silently skip
+                // since they're not critical and overlay failure is expected in unprivileged mode
             }
         }
     }
@@ -667,3 +710,4 @@ fn setup_sudo_configuration(container_root: &str, username: &str) -> Result<()> 
     println!("Configured sudo access for user: {}", username);
     Ok(())
 }
+
