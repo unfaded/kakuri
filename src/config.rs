@@ -24,7 +24,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             storage: StorageConfig {
-                containers_dir: "~/.local/containers".to_string(),
+                containers_dir: "~/.local/kakuri/containers".to_string(),
             },
             defaults: DefaultsConfig {
                 allow_network: false,
