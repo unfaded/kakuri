@@ -8,7 +8,7 @@ Lightweight containerization built on Linux namespaces and filesystem isolation.
 - Persistent and temporary container modes
 - Filesystem isolation with overlay mounts
 - Optional user namespace mapping
-- Network isolation with WireGuard VPN support
+- Network isolation
 - Bind mount profiles for development workflows
 
 ## Quick Start
@@ -115,21 +115,6 @@ kakuri --bind ~/src:/src --bind-profile minimal bash
 - No network access (complete isolation)
 - Use "--allow-network" for host network access
 
-### VPN Isolation
-```bash
-# Route all container traffic through VPN
-kakuri --vpn ~/wireguard/vpn-config.conf bash
-kakuri --vpn ~/wireguard/vpn-config.conf python script.py
-
-# Persistent VPN containers
-kakuri create --vpn vpn-config secure-env
-kakuri start secure-env --vpn different-config bash
-
-# VPN management for existing containers
-kakuri vpn set mycontainer vpn-config
-kakuri vpn show mycontainer
-kakuri vpn remove mycontainer
-```
 
 ## Security Model
 
@@ -148,31 +133,6 @@ Kakuri uses Linux user namespaces to provide unprivileged containerization:
 4. Execute target command
 5. Clean up temporary resources
 
-## VPN Configuration
-
-Kakuri supports WireGuard VPN configurations in two ways:
-
-### Named Configurations
-Place ".conf" files in standard locations:
-- /etc/wireguard/myconfig.conf
-- ~/.config/wireguard/myconfig.conf
-- ~/.wireguard/myconfig.conf
-
-Then reference by name:
-```bash
-kakuri --vpn myconfig bash
-```
-
-### Direct File Paths
-```bash
-kakuri --vpn ~/vpn-configs/wireguard-location.conf bash
-kakuri --vpn /etc/wireguard/secure.conf bash
-```
-
-### Requirements
-- "wireguard-tools" package ("wg" command)
-- "iproute2" package ("ip" command)
-- Valid WireGuard configuration file
 
 ## Troubleshooting
 
@@ -204,13 +164,3 @@ Verify network namespace creation:
 unshare --net --map-root-user ip link
 ```
 
-### VPN Issues
-Check WireGuard tools installation:
-```bash
-wg --version
-```
-
-Verify configuration file format:
-```bash
-wg show all
-```
