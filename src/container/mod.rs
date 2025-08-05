@@ -2,7 +2,6 @@ mod execution;
 mod filesystem;
 mod namespaces;
 pub mod user;
-mod vpn;
 
 use crate::{LegacyCli, registry::ContainerConfig};
 use anyhow::{Context, Result};
@@ -85,15 +84,6 @@ pub fn run_container(command: &str, args: &[String], cli: &LegacyCli) -> Result<
         unshare_cmd.arg(bind_mount);
     }
 
-    // Add VPN config
-    if let Some(vpn_config) = &cli.vpn_config {
-        unshare_cmd.arg("--vpn");
-        if let Some(config_path) = &vpn_config.config_path {
-            unshare_cmd.arg(config_path);
-        } else if let Some(config_name) = &vpn_config.config_name {
-            unshare_cmd.arg(config_name);
-        }
-    }
 
     let status = unshare_cmd
         .status()
