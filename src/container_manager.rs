@@ -7,7 +7,6 @@ pub fn create_container(
     init: bool,
     allow_network: bool,
     bind: Vec<String>,
-    vpn_config: Option<crate::registry::VpnConfig>,
 ) -> Result<()> {
     let mut registry = ContainerRegistry::load()?;
 
@@ -94,7 +93,6 @@ pub fn create_container(
         command: None,
         args: vec![],
         bind_mounts,
-        vpn_config,
     };
 
     // Add container to registry
@@ -161,139 +159,8 @@ pub fn list_containers() -> Result<()> {
     Ok(())
 }
 
-pub fn set_container_vpn(name: String, config: String) -> Result<()> {
-    let mut registry = ContainerRegistry::load()?;
 
-    // Find container by name
-    let containers = registry.find_by_name(&name);
-    let container_id = match containers.len() {
-        0 => anyhow::bail!("No container found with name {}", name),
-        1 => containers[0].full_id(),
-        _ => {
-            println!("Multiple containers found with name {}:", name);
-            for container in containers {
-                println!(
-                    "  {} ({})",
-                    container.full_id(),
-                    match container.status {
-                        ContainerStatus::Created => "created",
-                        ContainerStatus::Running => "running",
-                        ContainerStatus::Stopped => "stopped",
-                        ContainerStatus::Temporary => "temporary",
-                    }
-                );
-            }
-            anyhow::bail!("Please specify the full container ID instead of name");
-        }
-    };
-
-    // Get container info
-    let container = registry
-        .get_container_mut(&container_id)
-        .ok_or_else(|| anyhow::anyhow!("Container not found: {}", container_id))?;
-
-    // Parse and set VPN config
-    let vpn_config = crate::parse_vpn_config(Some(config))?;
-    container.config.vpn_config = vpn_config;
-
-    // Save registry
-    registry.save()?;
-
-    println!("VPN configuration updated for container: {}", container_id);
-    Ok(())
-}
-
-pub fn remove_container_vpn(name: String) -> Result<()> {
-    let mut registry = ContainerRegistry::load()?;
-
-    // Find container by name
-    let containers = registry.find_by_name(&name);
-    let container_id = match containers.len() {
-        0 => anyhow::bail!("No container found with name {}", name),
-        1 => containers[0].full_id(),
-        _ => {
-            println!("Multiple containers found with name {}:", name);
-            for container in containers {
-                println!(
-                    "  {} ({})",
-                    container.full_id(),
-                    match container.status {
-                        ContainerStatus::Created => "created",
-                        ContainerStatus::Running => "running",
-                        ContainerStatus::Stopped => "stopped",
-                        ContainerStatus::Temporary => "temporary",
-                    }
-                );
-            }
-            anyhow::bail!("Please specify the full container ID instead of name");
-        }
-    };
-
-    // Get container info
-    let container = registry
-        .get_container_mut(&container_id)
-        .ok_or_else(|| anyhow::anyhow!("Container not found: {}", container_id))?;
-
-    // Remove VPN config
-    container.config.vpn_config = None;
-
-    // Save registry
-    registry.save()?;
-
-    println!("VPN configuration removed from container: {}", container_id);
-    Ok(())
-}
-
-pub fn show_container_vpn(name: String) -> Result<()> {
-    let registry = ContainerRegistry::load()?;
-
-    // Find container by name
-    let containers = registry.find_by_name(&name);
-    let container_id = match containers.len() {
-        0 => anyhow::bail!("No container found with name {}", name),
-        1 => containers[0].full_id(),
-        _ => {
-            println!("Multiple containers found with name {}:", name);
-            for container in containers {
-                println!(
-                    "  {} ({})",
-                    container.full_id(),
-                    match container.status {
-                        ContainerStatus::Created => "created",
-                        ContainerStatus::Running => "running",
-                        ContainerStatus::Stopped => "stopped",
-                        ContainerStatus::Temporary => "temporary",
-                    }
-                );
-            }
-            anyhow::bail!("Please specify the full container ID instead of name");
-        }
-    };
-
-    // Get container info
-    let container = registry
-        .get_container(&container_id)
-        .ok_or_else(|| anyhow::anyhow!("Container not found: {}", container_id))?;
-
-    // Show VPN config
-    match &container.config.vpn_config {
-        None => println!("Container {} has no VPN configuration", container_id),
-        Some(vpn) => {
-            println!("VPN configuration for container {}:", container_id);
-            println!("  Interface: {}", vpn.interface_name);
-            if let Some(name) = &vpn.config_name {
-                println!("  Config name: {}", name);
-            }
-            if let Some(path) = &vpn.config_path {
-                println!("  Config path: {}", path);
-            }
-        }
-    }
-
-    Ok(())
-}
-
-pub fn start_container(name: String, command: Vec<String>, vpn_override: Option<String>) -> Result<()> {
+pub fn start_container(name: String, command: Vec<String>) -> Result<()> {
     let mut registry = ContainerRegistry::load()?;
 
     // Find container by name
@@ -342,12 +209,7 @@ pub fn start_container(name: String, command: Vec<String>, vpn_override: Option<
     };
 
     // Clone the config before modifying the container
-    let mut config = container.config.clone();
-    
-    // Apply VPN override if provided
-    if let Some(vpn_config_str) = vpn_override {
-        config.vpn_config = crate::parse_vpn_config(Some(vpn_config_str))?;
-    }
+    let config = container.config.clone();
 
     // Update container status and command
     container.status = ContainerStatus::Running;
