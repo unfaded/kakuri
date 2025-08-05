@@ -148,6 +148,10 @@ fn handle_direct_execution(raw_args: &[String]) -> Result<()> {
 
     let actual_command = command.unwrap_or_else(|| "/bin/bash".to_string());
 
+    // Auto-detect and add paths from command arguments
+    let mut auto_bind = detect_paths_in_args(&actual_command, &command_args);
+    bind.append(&mut auto_bind);
+
     let legacy_cli = LegacyCli {
         command: actual_command.clone(),
         args: command_args.clone(),
@@ -297,7 +301,12 @@ fn main() -> Result<()> {
     match cli.subcommand {
         None => {
             let actual_command = cli.command.unwrap_or_else(|| "/bin/bash".to_string());
-            let final_binds = merge_bind_mounts(cli.bind.clone(), cli.bind_profile.clone())?;
+            let mut final_binds = merge_bind_mounts(cli.bind.clone(), cli.bind_profile.clone())?;
+            
+            // Auto-detect and add paths from command arguments
+            let mut auto_bind = detect_paths_in_args(&actual_command, &cli.args);
+            final_binds.append(&mut auto_bind);
+            
             let legacy_cli = LegacyCli {
                 command: actual_command.clone(),
                 args: cli.args.clone(),
@@ -316,7 +325,12 @@ fn main() -> Result<()> {
             user,
         }) => {
             let actual_command = command.unwrap_or_else(|| "/bin/bash".to_string());
-            let final_binds = merge_bind_mounts(bind, bind_profile)?;
+            let mut final_binds = merge_bind_mounts(bind, bind_profile)?;
+            
+            // Auto-detect and add paths from command arguments
+            let mut auto_bind = detect_paths_in_args(&actual_command, &args);
+            final_binds.append(&mut auto_bind);
+            
             let legacy_cli = LegacyCli {
                 command: actual_command.clone(),
                 args: args.clone(),
@@ -380,4 +394,113 @@ fn merge_bind_mounts(bind: Vec<String>, bind_profile: Option<String>) -> Result<
 
     Ok(final_binds)
 }
+
+fn detect_paths_in_args(_command: &str, args: &[String]) -> Vec<String> {
+    let mut detected_paths = Vec::new();
+    
+    // Only check arguments, not the command itself
+    // The command (like /usr/bin/python3) is already available in the container
+    for arg in args {
+        if is_path_like(arg) && path_exists(arg) {
+            // For auto-detected paths, we want to mount them as read-only
+            // and we definitely don't want create_if_missing since they already exist
+            let expanded_path = if arg.starts_with("~/") {
+                if let Ok(home) = std::env::var("HOME") {
+                    arg.replacen("~", &home, 1)
+                } else {
+                    arg.to_string()
+                }
+            } else {
+                arg.to_string()
+            };
+            
+            // Use a special prefix to mark auto-detected paths
+            // This will help us identify them later and set create_if_missing: false
+            detected_paths.push(format!("__AUTO_DETECTED__:{}:{}", expanded_path, expanded_path));
+        }
+    }
+    
+    // Remove duplicates while preserving order
+    detected_paths.sort();
+    detected_paths.dedup();
+    
+    if !detected_paths.is_empty() {
+        println!("Auto-detected {} path(s) for mounting", detected_paths.len());
+    }
+    
+    detected_paths
+}
+
+fn is_path_like(s: &str) -> bool {
+    // Consider something a path if it:
+    // 1. Starts with / (absolute path)
+    // 2. Starts with ./ or ../ (relative path)
+    // 3. Contains / and looks like a file path
+    // 4. Starts with ~ (home directory)
+    
+    if s.is_empty() {
+        return false;
+    }
+    
+    // Absolute paths
+    if s.starts_with('/') {
+        return true;
+    }
+    
+    // Home directory paths
+    if s.starts_with('~') {
+        return true;
+    }
+    
+    // Relative paths
+    if s.starts_with("./") || s.starts_with("../") {
+        return true;
+    }
+    
+    // Paths with directory separators that look like files
+    if s.contains('/') {
+        // Check if it has a reasonable file extension or looks like a directory
+        if s.ends_with('/') {
+            return true;
+        }
+        
+        // Common file extensions that suggest this is a file path
+        let file_extensions = [
+            ".py", ".js", ".rs", ".c", ".cpp", ".h", ".hpp", ".java", ".go",
+            ".txt", ".md", ".json", ".yaml", ".yml", ".toml", ".xml", ".html",
+            ".css", ".sh", ".bash", ".conf", ".cfg", ".ini", ".log", ".csv",
+            ".sql", ".dockerfile", ".docker", ".env", ".properties"
+        ];
+        
+        for ext in &file_extensions {
+            if s.to_lowercase().ends_with(ext) {
+                return true;
+            }
+        }
+        
+        // If it contains a slash and has 2+ components, likely a path
+        let components: Vec<&str> = s.split('/').collect();
+        if components.len() >= 2 && !components.iter().any(|c| c.is_empty()) {
+            return true;
+        }
+    }
+    
+    false
+}
+
+fn path_exists(path: &str) -> bool {
+    // Expand ~ to home directory if needed
+    let expanded_path = if path.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            path.replacen("~", &home, 1)
+        } else {
+            path.to_string()
+        }
+    } else {
+        path.to_string()
+    };
+    
+    std::path::Path::new(&expanded_path).exists()
+}
+
 
