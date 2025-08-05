@@ -7,6 +7,7 @@ use nix::mount::{MsFlags, mount};
 use nix::unistd::{chdir, chroot};
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 pub fn setup_container(cli: &LegacyCli, container_id: Option<&str>) -> Result<()> {
     println!("Setting up container filesystem...");
@@ -214,20 +215,21 @@ fn mount_command_binary(command: &str, container_root: &str) -> Result<()> {
     println!("Mounting: {}", command);
 
     // For /bin/bash, we need to mount essential directories
-    if command == "/bin/bash" {
+    if command == "/bin/bash" || command == "bash" {
         mount_essential_dirs(container_root)?;
         return Ok(());
     }
 
-    // For other commands, mount just the specific binary and its dependencies
-    let command_path = std::path::Path::new(command);
+    // Resolve the command path using PATH if needed
+    let resolved_command = resolve_command_path(command)?;
+    let command_path = std::path::Path::new(&resolved_command);
     if !command_path.exists() {
         return Err(anyhow::anyhow!("Command not found: {}", command));
     }
 
     // Show what dependencies this command needs
-    println!("Dependencies mounted for: {}", command);
-    show_dependencies(command)?;
+    println!("Dependencies mounted for: {}", resolved_command);
+    show_dependencies(&resolved_command)?;
 
     // Skip dependency mounting - we already mount essential lib directories
     // mount_dependencies(command, container_root)?;
@@ -574,8 +576,16 @@ fn setup_bind_mounts(
         // Parse bind mounts from CLI for temporary container
         let mut mounts = Vec::new();
         for bind_str in &cli.bind {
-            let bind_mount = BindMount::from_string(bind_str)
-                .with_context(|| format!("Invalid bind mount: {}", bind_str))?;
+            let (bind_mount, _is_auto_detected) = if bind_str.starts_with("__AUTO_DETECTED__:") {
+                // This is an auto-detected path - don't create if missing
+                let actual_bind_str = &bind_str["__AUTO_DETECTED__:".len()..];
+                (BindMount::from_string_with_create_missing(actual_bind_str, false)
+                    .with_context(|| format!("Invalid auto-detected bind mount: {}", actual_bind_str))?, true)
+            } else {
+                // This is a user-specified bind mount - create if missing
+                (BindMount::from_string(bind_str)
+                    .with_context(|| format!("Invalid bind mount: {}", bind_str))?, false)
+            };
 
             // Expand ~ to home directory
             let expanded_host_path = if bind_mount.host_path.starts_with("~/") {
@@ -590,6 +600,7 @@ fn setup_bind_mounts(
                 container_path: bind_mount.container_path,
                 create_if_missing: bind_mount.create_if_missing,
             };
+
 
             mounts.push(final_mount);
         }
@@ -608,6 +619,7 @@ fn apply_bind_mount(container_root: &str, bind_mount: &BindMount) -> Result<()> 
     let host_path = std::path::Path::new(&bind_mount.host_path);
     let container_path = bind_mount.container_path();
     let target_path = format!("{}{}", container_root, container_path);
+    
 
     // Ensure host path exists if create_if_missing is true
     if bind_mount.create_if_missing && !host_path.exists() {
@@ -709,5 +721,38 @@ fn setup_sudo_configuration(container_root: &str, username: &str) -> Result<()> 
 
     println!("Configured sudo access for user: {}", username);
     Ok(())
+}
+
+fn resolve_command_path(command: &str) -> Result<String> {
+    // If the command is already an absolute path, use it as-is
+    if command.starts_with('/') {
+        return Ok(command.to_string());
+    }
+    
+    // If the command contains a slash, treat it as a relative path
+    if command.contains('/') {
+        return Ok(command.to_string());
+    }
+    
+    // For simple command names, use `which` to resolve the path
+    let output = Command::new("which")
+        .arg(command)
+        .output()
+        .context("Failed to execute 'which' command")?;
+    
+    if !output.status.success() {
+        return Err(anyhow::anyhow!("Command '{}' not found in PATH", command));
+    }
+    
+    let resolved_path = String::from_utf8(output.stdout)
+        .context("Invalid UTF-8 in 'which' output")?
+        .trim()
+        .to_string();
+    
+    if resolved_path.is_empty() {
+        return Err(anyhow::anyhow!("Command '{}' not found in PATH", command));
+    }
+    
+    Ok(resolved_path)
 }
 
