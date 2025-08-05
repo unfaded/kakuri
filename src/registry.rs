@@ -37,16 +37,8 @@ pub struct ContainerConfig {
     pub args: Vec<String>,
     #[serde(default)]
     pub bind_mounts: Vec<BindMount>,
-    #[serde(default)]
-    pub vpn_config: Option<VpnConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VpnConfig {
-    pub config_name: Option<String>,
-    pub config_path: Option<String>,
-    pub interface_name: String,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BindMount {
