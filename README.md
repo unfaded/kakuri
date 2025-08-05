@@ -141,7 +141,6 @@ The automatic mounting:
 - Detects home directory paths (`~/file`) 
 - Detects relative paths (`./file`, `../file`)
 - Detects common file extensions
-- Only mounts paths that actually exist on the host
 
 ## Network Isolation
 
