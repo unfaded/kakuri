@@ -53,19 +53,23 @@ impl BindMount {
     }
 
     pub fn from_string(bind_str: &str) -> Result<Self> {
+        Self::from_string_with_create_missing(bind_str, true)
+    }
+
+    pub fn from_string_with_create_missing(bind_str: &str, create_if_missing: bool) -> Result<Self> {
         if let Some((host, container)) = bind_str.split_once(":") {
             // Format: host_path:container_path
             Ok(BindMount {
                 host_path: host.to_string(),
                 container_path: Some(container.to_string()),
-                create_if_missing: true,
+                create_if_missing,
             })
         } else {
             // Format: path (same for both host and container)
             Ok(BindMount {
                 host_path: bind_str.to_string(),
                 container_path: None,
-                create_if_missing: true,
+                create_if_missing,
             })
         }
     }
