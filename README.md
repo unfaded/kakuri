@@ -9,6 +9,8 @@ Lightweight containerization built on Linux namespaces and filesystem isolation.
 - Filesystem isolation with overlay mounts
 - Optional user namespace mapping
 - Network isolation
+- Automatic PATH resolution for commands
+- Automatic path mounting for file arguments
 - Bind mount profiles for development workflows
 
 ## Quick Start
@@ -17,6 +19,15 @@ Lightweight containerization built on Linux namespaces and filesystem isolation.
 # Direct execution (temporary container)
 kakuri
 kakuri python3 script.py
+
+# Automatic path mounting - files/directories in arguments are auto-mounted
+kakuri python3 /path/to/script.py
+kakuri python3 ~/my_project/main.py
+
+# Commands use PATH resolution - no need for full paths
+kakuri python3 --version
+kakuri node --version  
+kakuri gcc --version
 
 # Container management
 kakuri create mycontainer
@@ -108,6 +119,29 @@ kakuri --bind-profile dev bash
 # Custom binds + profile
 kakuri --bind ~/src:/src --bind-profile minimal bash
 ```
+
+### Automatic Path Mounting
+
+Kakuri automatically detects file and directory paths in command arguments and mounts them into the container. This allows seamless access to files without explicitly specifying bind mounts.
+
+```bash
+# These paths are automatically mounted:
+kakuri python3 /path/to/script.py          # /path/to/script.py mounted
+kakuri node ~/project/app.js               # ~/project/app.js mounted  
+kakuri gcc -o app ~/src/main.c ~/src/lib.c # ~/src/ mounted
+kakuri vim /etc/hosts                      # /etc/hosts mounted
+
+# Works with any file extensions and directory paths
+kakuri python3 ~/data/process.py ~/output/results.txt
+```
+
+The automatic mounting:
+- Only affects arguments, not the command itself
+- Detects absolute paths (`/path/to/file`)
+- Detects home directory paths (`~/file`) 
+- Detects relative paths (`./file`, `../file`)
+- Detects common file extensions
+- Only mounts paths that actually exist on the host
 
 ## Network Isolation
 
