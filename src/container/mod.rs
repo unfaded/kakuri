@@ -127,7 +127,7 @@ pub fn init_container(
         .context("Failed to setup container filesystem")?;
 
     // Set container hostname
-    nix::unistd::sethostname("container").context("Failed to set hostname")?;
+    nix::unistd::sethostname("kakuri").context("Failed to set hostname")?;
 
     // Execute the command
     execution::exec_command(command, args, cli).context("Failed to execute command")?;

@@ -164,7 +164,7 @@ fn handle_direct_execution(raw_args: &[String]) -> Result<()> {
 }
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "container")]
+#[command(name = "kakuri")]
 #[command(about = "Unprivileged container runtime")]
 struct Cli {
     #[arg(long, hide = true)]

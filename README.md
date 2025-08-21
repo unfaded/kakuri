@@ -89,7 +89,7 @@ kakuri remove container_name
 
 ## Configuration
 
-Default config location: "~/.config/container/config.toml"
+Default config location: "~/.config/kakuri/config.toml"
 
 ```toml
 [storage]
